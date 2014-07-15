@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+<script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.8.24/jquery-ui.min.js"></script>
+<script type="text/javascript" src="/js/QuickBaseClient.js"></script>
+<script type="text/javascript" src="https://ironmountain.quickbase.com/db/bh258sqdu?a=dbpage&pagename=moment.js"></script>
+<script type="text/javascript" src="https://ironmountain.quickbase.com/db/bh258sqdu?a=dbpage&pagename=jquery-ui-timepicker-addon.js"></script>
+<link href="//ajax.googleapis.com/ajax/libs/jqueryui/1.8/themes/base/jquery-ui.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript">
+
+			var qdb = new QuickBaseClient("https://" + window.location.hostname);
+			qdb.SetAppToken("6fb6b83tkapacuj9aa9j8z8qs");
+			var appDBID = "bh3524sqdu";
+			var locator = [];
+            var qbuser = "";
+            var hostname = "https://haitianconnection.quickbase.com";
+            var timecount = 0;
+            var timers = [];
+            var qbinterval = 1; // qbinterval = x minute
+            
+            var assignments = {
+            	dbid : "bh258xuza",
+            	relatedproject: "8",
+            	address: "9",
+            	projectname: "10",
+            	owner: "4",
+            	timedate: "13",
+            	active: "6",
+            	modified: "2",
+            	draft: "14"
+            	
+            }
+            var Timer = function(id, t){
+            	
+            	this.rec_id = id;
+            	this.clock = $("#clock_" + id);
+            	this.counter = $("#counter_" + id);
+            	this.time = (t * 60);
+            	this.tpassed = 0;
+            	this.qbwrite = 0;
+            	this.seconds = 0;
+            	this.samay = null;
+            	 
+            }
+            Timer.prototype.resetTime = function(t){
+            	this.time = (t * 60);
+            	this.qbwrite = 0;
+            	this.updateTime(true);
+            }
+            Timer.prototype.start = function(){
+            	
+            	var self = this;
+            	
+            	self.samay = setInterval(function(){
+            		//self.time += 1000;
+            		
+		    	    self.seconds += 1;
+		    	    self.tpassed += 1;
+		    	    
+		    	    if (self.seconds == 60){		    	    
+		        	   self.time += 1;
+		        	   self.seconds = 0;
+		        	}
+		        	
+		        	self.updateTime();
+	        		
+	    		},1000);
+            }
+            Timer.prototype.pause = function(){
+            	//alert("pausing timer:" + this.rec_id);
+            	clearInterval(this.samay);
+            }
+            
+            Timer.prototype.updateTime = function(toSync){
+            	var mins = (this.tpassed / 60);
+            	if ( ! toSync ){
+
+	            	if ( (mins - this.qbwrite) > qbinterval ){
+	            		this.updateQbtime();
+	            		this.qbwrite = mins;
+	            	}
+            		
+            	}else{
+            		this.updateQbtime();
+	            	this.qbwrite = mins;
+            	}
+
+            	this.screenTime();
+            }
+            
+            Timer.prototype.screenTime = function(){           	
+            	var hours = Math.round( (this.time/60) * 10)/10;
+            	this.clock.text(hours);
+            	
+            	var mins = 0;
+            	
+            	var secs = this.tpassed;
+            	hours = 0;
+            	
+            	while ( secs >= 60){
+	            	mins += 1;
+	            	secs -= 60;
+	            }
+	            
+	            while ( mins >= 60){
+	            	hours += 1;
+	            	mins -= 60;
+	            }
+            	
+            	this.counter.text(hours + "h:" + mins + "m:" + secs + "s");
+            }
+            
+            Timer.prototype.updateQbtime = function(){
+					var htime = this.time / 60;
+					htime = Math.round(htime * 10)/10;
+					var fields = [];
+					fields.push(assignments.timedate);
+					fields.push(htime);
+					
+					qdb.EditRecord(assignments.dbid, this.rec_id, fields);
+					if (qdb.displayErrorAlert("Error updating time date")) {
+						alert("Error updating timedate")
+						return false;
+				  }
+			}
+
+			$(function(){
+				$("button").button();
+				$(".dialog-edit").dialog({
+					modal : true,
+					autoOpen : false,
+					closeOnEscape : false,
+					title : "Edit total  hours",
+					width : 750,
+					open : function() {
+						//$("[name=select-all]").removeAttr("checked");
+					},
+					buttons : {
+						Close : function() {
+							$(this).dialog("close");
+						}
+					}
+
+				});
+				
+				showPage();
+				$("[name=update-time]").click(function(){
+					resetTime();
+				});
+				
+				$("[name=alldone]").click(function(){
+					//location.reload(true);
+					refreshParent("https://ironmountain.quickbase.com/db/bh258sqdu");
+				});
+			});
+			
+			 function refreshParent(url) {
+			 	syncAllTimers();
+	            window.location.href = url;
+	            
+	        }
+			function showPage(){
+				$(".assignments thead").empty();
+				var hrow = $("<tr bgcolor='#ffffff'></tr>");
+				hrow.html("<th>Edit</th><th></th><th>Hours</th><th>Timer</th><th>Toggle</th><th>Related Projects</th><th>Project Address</th><th>Project Name</th><th>Close</th>").appendTo(".assignments thead");
+				$(".loading").hide();
+				$(".assignments").show();
+				createInitialAssignment();
+				getInitialAssignment();
+				listAssignments();
+				
+			}
+			
+			function createInitialAssignment(){
+	            var fields = [];
+	            fields.push(assignments.draft);
+	            fields.push("draft-assignment");
+	            // fields.push(assignments.active);
+	            // fields.push("1");
+	            qdb.AddRecord(assignments.dbid,fields);
+				if (qdb.displayErrorAlert("Error creating initial draft assignment")) {
+					return false;
+				}
+				return true;
+			}
+			
+			function getInitialAssignment(){
+				var filter = "{'" + assignments.owner + "'.TV.'" + '_curuser_' + "'}";
+				filter += "AND{'" + assignments.draft + "'.EX.'" + "draft-assignment" + "'}";
+				//console.log(filter);
+				var clist = "3." + [assignments.relatedproject, assignments.address, assignments.projectname, assignments.timedate,assignments.modified].join(".");
+				var slist = ["3"].join(".");
+		        var opts = "so-D";
+				var qdbResponse = qdb.DoQuery(assignments.dbid, filter, clist, slist,opts);
+				if (qdb.displayErrorAlert("Error trying to retrieve assignments")) {
+					return false;
+				}
+				var qdbRecords = qdb.selectNodes(qdbResponse, "/*/table/records/record");
+				//console.log("checking for rows");
+				if ( qdbRecords.length ){
+					    //console.log("got row");
+						var record = qdbRecords[0];
+						var rec_id = fieldValue(record, "3");
+						var timedate = fieldValue(record,assignments.timedate);
+						var projectname = fieldValue(record,assignments.projectname);
+						projectname = "[Draft]";
+						if ( timedate == ""){
+							timedate = 0;
+						}//else{
+							// timedate = Math.round(timedate * 10)/10;
+						// }
+
+						var trow = $("<tr bgcolor='#ffffff' class='" + rec_id + "'></tr>");
+						trow.html('<td><div id="edit_' + rec_id + '" num="' + rec_id + '">Edit</div> </td><td><input type=radio name="radio" id="radio_' + rec_id + '" value="' + rec_id + '" timedate="' + timedate + '"/></td><td><div id="clock_' + rec_id + '">' + timedate + '</div></td><td><div id="counter_' + rec_id + '"></div></td><td><button type="button" class="button ui-helper-hidden" id="button_' + rec_id + '" num="' + rec_id + '">pause</button></td><td>' + fieldValue(record,assignments.relatedproject) + '</td><td>' + fieldValue(record,assignments.address) + '</td><td>' + projectname + '</td><td><button type="button" num="' + rec_id + '" id="close_' + rec_id + '">X</button></td>').appendTo(".assignments tbody");
+						var editlink = $("#edit_" + rec_id);
+						editlink.css({"color":"blue","font-size":"11px", "text-decoration": "underline"});
+						editlink.hide();
+						editlink.click(function(){
+						   var num = $(this).attr("num");
+						   var button = $("#button_" + num);
+						   button.html("restart");
+						   editDialog(num);	
+						});
+						
+						var cl = $("#close_" + rec_id);
+						cl.click(function(){
+							
+							var num = $(this).attr("num");
+							// alert("inactivate:" + num);
+							inactivate(num);
+							var tbr = $('table.assignments tr');
+							
+							tbr.filter("." + num).hide();
+						});
+						
+						var button = $("#button_" + rec_id);
+						button.hide();
+						button.click(function(){
+						 	 		var mode = $(this).html();
+						 	 		var v = $(this).attr("num");
+						 	 		if ( mode == "pause"){
+						 	 			
+						 	 			$(this).html("restart");
+						 	 		}else{
+						 	 			
+						 	 			$(this).html("pause")
+						 	 		}
+						 	 		var rd = $("#radio_" + v);
+						 	 		
+						 	 		var rd = $("#radio_" + v);
+						 	 		
+						 	 		if ( rd.attr('checked')){
+						 	 			toggleTimer(v,mode);
+						 	 		}
+						 	 		
+						});
+				}
+			}
+			function findTimer(id){
+				 
+				var timer = 0;
+				 
+				for (var i=0; i < timers.length; i++){
+					var temp = timers[i];
+					if (temp.rec_id == id){
+						// found
+						timer = temp;
+					}else{
+						temp.pause();
+					}
+				}
+				return timer;
+			}
+			
+			function startClock(rec_id,td){
+			    var timer = findTimer(rec_id);
+			    
+			    if (timer == 0) {
+			    	
+			    	td = parseFloat(td);
+			    	// alert("new timer td:" + td);
+				    timer = new Timer(rec_id,td);
+					timers.push(timer);
+				}
+				timer.start();	
+			}
+			
+			function toggleTimer(id,mode){
+				//alert("switching timer:" + id + " to:" + mode);
+				var timer = findTimer(id);
+				if ( timer ){
+					if ( mode == "restart"){
+						timer.start();
+					}else{
+						timer.pause();
+					}
+				}
+			}
+			function inactivate(id){
+				var timer = findTimer(id);
+				if ( timer ){
+					timer.pause();
+				}
+				markInactive(id);
+			}
+			function markInactive(rid){
+				var fields = [];
+				fields.push(assignments.active);
+				fields.push("0");
+				qdb.EditRecord(assignments.dbid, rid, fields);
+				if (qdb.displayErrorAlert("Error de-activating")) {
+					alert("Error de-activating")
+					return false;
+				}
+			}
+			function editDialog(rid){
+				var timer = findTimer(rid);
+				if ( ! timer ){
+					alert("no dialog for:" + rid);
+					return;
+				}
+				timer.pause();
+				var tm = timer.time/60;
+				tm = Math.round(tm *10)/10;
+				$("[name=edit-hour]").val(tm);
+				$("[name=edit-id]").val(rid);
+				$(".dialog-edit").dialog("open");
+				
+			}
+			
+			function resetTime(){
+				var rid = $("[name=edit-id]").val();
+				var timer = findTimer(rid);
+				if ( ! timer ){
+					alert("no timer:" + rid);
+					return false;
+				}
+				timer.pause();
+				var time = $("[name=edit-hour]").val();
+				timer.resetTime(time);
+			}
+			
+			function syncAllTimers(){
+				for (var i=0; i< timers.length; i++){
+					var timer = timers[i];
+				    timer.pause;
+				    timer.updateQbtime();
+				}
+			}
+			function listAssignments(){
+				var filter = "{'" + assignments.owner + "'.TV.'" + '_curuser_' + "'}";
+				filter += "AND{'" + assignments.active + "'.EX.'" + "1" + "'}";
+				filter += "AND{'" + assignments.relatedproject + "'.XEX.'" + "" + "'}";
+				//console.log(filter);
+				var clist = "3." + [assignments.relatedproject, assignments.address, assignments.projectname, assignments.timedate,assignments.modified].join(".");
+				var slist = [assignments.modified].join(".");
+		
+				var qdbResponse = qdb.DoQuery(assignments.dbid, filter, clist, slist);
+				if (qdb.displayErrorAlert("Error trying to retrieve assignments")) {
+					return false;
+				}
+				var qdbRecords = qdb.selectNodes(qdbResponse, "/*/table/records/record");
+				if ( qdbRecords.length == 0){
+					
+					var erow = $("<tr></tr>");
+					erow.html("<td colspan=8 align=center><b>No assignments found!</b></td>").append(".assignments tbody");
+				}else{
+					//console.log("got rows");
+					// var radiorow = $("<tr></tr>");
+					// radiorow.html('<td colspan=6><div id="radioBtnDiv"></td>').appendTo(".assignments tbody");
+					for (var r = 0; r < qdbRecords.length; r++) {
+						var record = qdbRecords[r];
+						var rec_id = fieldValue(record, "3");
+						var timedate = fieldValue(record,assignments.timedate);
+						
+						if ( timedate == ""){
+							timedate = 0;
+						}//else{
+							// timedate = Math.round(timedate * 10)/10;
+						// }
+
+						var trow = $("<tr bgcolor='#ffffff' class='" + rec_id + "'></tr>");
+						trow.html('<td><div id="edit_' + rec_id + '" num="' + rec_id + '">Edit</div> </td><td><input type=radio name="radio" id="radio_' + rec_id + '" value="' + rec_id + '" timedate="' + timedate + '"/></td><td><div id="clock_' + rec_id + '">' + timedate + '</div></td><td><div id="counter_' + rec_id + '"></div></td><td><button type="button" class="button ui-helper-hidden" id="button_' + rec_id + '" num="' + rec_id + '">pause</button></td><td>' + fieldValue(record,assignments.relatedproject) + '</td><td>' + fieldValue(record,assignments.address) + '</td><td>' + fieldValue(record,assignments.projectname) + '</td><td><button type="button" num="' + rec_id + '" id="close_' + rec_id + '">X</button></td>').appendTo(".assignments tbody");
+						var editlink = $("#edit_" + rec_id);
+						editlink.css({"color":"blue","font-size":"11px", "text-decoration": "underline"});
+						editlink.hide();
+						editlink.click(function(){
+						   var num = $(this).attr("num");
+						   var button = $("#button_" + num);
+						   button.html("restart");
+						   editDialog(num);	
+						});
+						
+						var cl = $("#close_" + rec_id);
+						cl.click(function(){
+							
+							var num = $(this).attr("num");
+							// alert("inactivate:" + num);
+							inactivate(num);
+							var tbr = $('table.assignments tr');
+							
+							tbr.filter("." + num).hide();
+						});
+						
+						var button = $("#button_" + rec_id);
+						button.hide();
+						button.click(function(){
+						 	 		var mode = $(this).html();
+						 	 		var v = $(this).attr("num");
+						 	 		if ( mode == "pause"){
+						 	 			
+						 	 			$(this).html("restart");
+						 	 		}else{
+						 	 			
+						 	 			$(this).html("pause")
+						 	 		}
+						 	 		var rd = $("#radio_" + v);
+						 	 		
+						 	 		var rd = $("#radio_" + v);
+						 	 		
+						 	 		if ( rd.attr('checked')){
+						 	 			toggleTimer(v,mode);
+						 	 		}
+						 	 		
+						});
+					}
+					// var radiorow2 = $("<tr></tr>");
+					// radiorow2.html('<td colspan=6></div></td>').appendTo(".assignments tbody");
+					
+					
+					$("input[name=radio]").click( function(){
+						  
+						 $("input:radio").each(function(){
+						 	 if ( $(this).attr('checked') ){
+						 	 	
+						 	 	var v = $(this).attr("value");
+						 	 	var button = $("#button_" + v);
+						 	 	button.show();
+						 	 	button.html("pause");
+						 	 	
+						 	 	var edl = $("#edit_" + v);
+						 	 	 
+						 	 	edl.show();
+						 	 	startClock(v,$(this).attr("timedate"));
+
+						         
+						 	 }else{
+						 	 	var v = $(this).attr("value");
+						 	 	var button = $("#button_" + v);
+						 	 	button.hide();
+						 	 	var edl = $("#edit_" + v);
+						 	 	edl.hide();
+						 	 }
+						 });
+						 
+						 
+						
+					});
+						 
+				}
+			}
+			
+			 
+			function fieldValue(node, fid) {
+				return qdb.text(qdb.selectSingleNode(node, "f[@id=" + fid + "]"));
+			}
+</script>			
+		<style type="text/css">
+			.InfoBox {
+				background-color: White;
+				border: medium solid #324975;
+				font-family: sans-serif;
+				font-size: small;
+				display: block;
+				padding: 5px;
+				white-space: nowrap;
+				cursor: default;
+			}
+		</style>
+</head>
+
+<body>
+		<!-- dialog time track -->
+		<div class="assignmentdiv ui-helper">
+			 <table cellpadding="2px" cellspacing="1" border="0" bgcolor='#cccccc' class="assignments ui-widget" style="width:100%">
+				<thead class="ui-widget-header" style="text-align:left">
+						
+				</thead>
+				<tbody class="ui-widget-content">
+						 
+				</tbody>
+			</table>
+	
+			<div class="loading ui-helper-hidden">
+				<center><b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Retrieving assignments ... Please wait ...!</b></center>
+			</div>
+			<div class="alldone ui-helper">
+				<p>
+					<p></p>
+				</p>
+				<center><button type="button" name="alldone">Close Page</button></center>
+			</div>
+		</div>
+		<div class="dialog-edit ui-helper-hidden">
+			<table cellpadding="2px" cellspacing="0" border="0">
+				<tbody>
+					<tr>
+						<td><b>Hours</b></td>
+						<td></td>
+					</tr>
+					<tr>
+						<td>
+						<input type="text" name="edit-hour" size="10" />
+						<input type=hidden name="edit-id"/>
+						</td>
+						
+						<td>
+						<button type='button' name='update-time'>
+							Update
+						</button></td>
+					</tr>
+				</tbody>
+			</table>
+	   </div>
+		<!-- end of dialog time track -->
+
+</body>
+</html>
